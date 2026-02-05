@@ -2,19 +2,20 @@
   "name": "mugmockup-api",
   "version": "1.0.0",
   "type": "module",
-  "description": "AI-powered mug mockup generator API for n8n automation",
+  "description": "AI-powered mug mockup generator API with compression",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
-  "keywords": ["mockup", "ai", "gemini", "n8n", "automation"],
+  "keywords": ["mockup", "ai", "gemini", "n8n", "automation", "compression"],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@google/genai": "^1.40.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "express": "^4.21.2"
+    "express": "^4.21.2",
+    "sharp": "^0.33.5"
   }
 }
