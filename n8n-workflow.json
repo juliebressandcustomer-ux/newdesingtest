@@ -1,0 +1,96 @@
+{
+  "name": "Mug Mockup Generator - Railway",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "generate-mockup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "generate-mockup"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-APP-NAME.up.railway.app/api/generate-mockup",
+        "authentication": "none",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"mockupUrl\": \"{{ $json.body.mockupUrl }}\",\n  \"designUrl\": \"{{ $json.body.designUrl }}\"\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "http-request",
+      "name": "Generate Mockup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract and process the response\nconst item = $input.item.json;\n\nif (!item.success) {\n  throw new Error(item.error || 'Mockup generation failed');\n}\n\n// Extract base64 data without prefix\nconst base64Data = item.image.split(',')[1] || item.image;\n\nreturn {\n  success: true,\n  base64Image: base64Data,\n  dataUrl: item.image,\n  mimeType: item.mimeType,\n  fileName: `mockup-${Date.now()}.png`,\n  timestamp: item.timestamp\n};"
+      },
+      "id": "code",
+      "name": "Process Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond",
+      "name": "Return Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [900, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Generate Mockup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Mockup": {
+      "main": [
+        [
+          {
+            "node": "Process Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Result": {
+      "main": [
+        [
+          {
+            "node": "Return Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
