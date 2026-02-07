@@ -28,10 +28,12 @@ app.post('/api/generate-mockup', async (req, res) => {
   try {
     const { 
       mockupUrl, 
-      designUrl, 
-      outputFormat = 'jpeg',  // 'jpeg' ou 'png'
+      designUrl,
+      referenceUrl,           // NEW: Optional reference image for sizing
+      outputFormat = 'jpeg',  // 'jpeg' or 'png'
       quality = 85,           // 1-100
-      maxWidth = 2000         // pixels
+      maxWidth = 2000,        // pixels
+      designSize = 'medium'   // NEW: 'small', 'medium', 'large'
     } = req.body;
 
     // Validate inputs
@@ -45,6 +47,8 @@ app.post('/api/generate-mockup', async (req, res) => {
     console.log('🎨 Processing mockup request...');
     console.log('📸 Mockup URL:', mockupUrl);
     console.log('🎨 Design URL:', designUrl);
+    console.log('📏 Design Size:', designSize);
+    if (referenceUrl) console.log('🔗 Reference URL:', referenceUrl);
     console.log('⚙️ Output format:', outputFormat);
     console.log('⚙️ Quality:', quality);
 
@@ -65,6 +69,19 @@ app.post('/api/generate-mockup', async (req, res) => {
     const designBase64 = Buffer.from(designBuffer).toString('base64');
     const designMimeType = designResponse.headers.get('content-type') || 'image/png';
 
+    // Fetch reference image if provided
+    let referenceBase64 = null;
+    let referenceMimeType = null;
+    if (referenceUrl) {
+      const referenceResponse = await fetch(referenceUrl);
+      if (referenceResponse.ok) {
+        const referenceBuffer = await referenceResponse.arrayBuffer();
+        referenceBase64 = Buffer.from(referenceBuffer).toString('base64');
+        referenceMimeType = referenceResponse.headers.get('content-type') || 'image/png';
+        console.log('✅ Reference image loaded');
+      }
+    }
+
     // Initialize Gemini AI
     const ai = new GoogleGenAI({ 
       apiKey: process.env.GEMINI_API_KEY 
@@ -72,42 +89,94 @@ app.post('/api/generate-mockup', async (req, res) => {
 
     const model = 'gemini-2.5-flash-image';
 
-    const prompt = `You are a world-class graphic designer specializing in product mockups. 
-I am providing two images:
-1. A base "Mug Mockup" image (blank mug photo).
-2. A "Design" image (artwork/logo to apply).
+    // Design size specifications
+    const sizeSpecs = {
+      small: {
+        coverage: '35-40%',
+        description: 'Small, subtle design (like a small logo or icon)',
+        dimensions: '2 inches wide on a standard 11oz mug'
+      },
+      medium: {
+        coverage: '50-60%',
+        description: 'Medium-sized design (standard product mockup)',
+        dimensions: '3-3.5 inches wide on a standard 11oz mug'
+      },
+      large: {
+        coverage: '65-75%',
+        description: 'Large, prominent design (wrap-around effect)',
+        dimensions: '4-4.5 inches wide on a standard 11oz mug'
+      }
+    };
 
-Your task:
-- Intelligently identify the visible surface of the mug in the base mockup.
-- Map the "Design" image onto that surface.
-- Ensure the design follows the physical curvature of the mug perfectly.
-- Match the lighting, shadows, and reflections of the original scene so the design looks naturally printed on the mug.
-- The output should be a single final composite image of the mug with the design applied.
-- Retain the original background and surrounding elements of the mockup.
+    const selectedSize = sizeSpecs[designSize] || sizeSpecs.medium;
 
-Generate a realistic product mockup image.`;
+    // Build the prompt with reference handling
+    let prompt = `You are a world-class graphic designer specializing in product mockups. 
+
+I am providing ${referenceBase64 ? 'three' : 'two'} images:
+${referenceBase64 ? '1. A REFERENCE mockup showing EXACTLY the size and positioning I want you to replicate\n2. A base "Mug Mockup" image (blank mug photo)\n3. A "Design" image (artwork/logo to apply)' : '1. A base "Mug Mockup" image (blank mug photo)\n2. A "Design" image (artwork/logo to apply)'}
+
+CRITICAL SIZING REQUIREMENTS:
+${referenceBase64 
+  ? '- Study the REFERENCE image carefully and replicate the EXACT size and position of the design\n- The design in the reference shows the perfect scale - match it precisely\n- Maintain the same relative proportions as shown in the reference'
+  : `- The design MUST cover approximately ${selectedSize.coverage} of the visible mug width\n- Design specifications: ${selectedSize.description}\n- Physical size reference: ${selectedSize.dimensions}\n- The design size MUST remain consistent regardless of mug angle or perspective`
+}
+
+POSITIONING REQUIREMENTS:
+- Center the design both horizontally and vertically on the visible mug surface
+- Position the design at the same height as shown in ${referenceBase64 ? 'the reference image' : 'standard product photography'}
+- Maintain consistent positioning even if the mug is viewed from different angles
+
+QUALITY REQUIREMENTS:
+- Intelligently identify the visible surface of the mug in the base mockup
+- Map the design onto that surface following the physical curvature perfectly
+- Apply perspective distortion to match the mug's cylindrical shape
+- Match the lighting, shadows, and reflections of the original scene
+- The design should look naturally printed on the mug, not pasted on
+- Retain the original background and surrounding elements of the mockup
+- Ensure crisp, clear design details
+
+${referenceBase64 ? 'REMEMBER: The reference image is your sizing guide. Match it exactly!' : `REMEMBER: Consistency is KEY. Every mockup with "${designSize}" size should have the design at ${selectedSize.coverage} of mug width.`}
+
+Generate a realistic, professionally-sized product mockup image.`;
 
     console.log('⚡ Calling Gemini API...');
+
+    // Build parts array for API call
+    const parts = [];
+    
+    // Add reference first if provided (so AI sees it first)
+    if (referenceBase64) {
+      parts.push({
+        inlineData: {
+          data: referenceBase64,
+          mimeType: referenceMimeType,
+        },
+      });
+    }
+    
+    // Add mockup and design
+    parts.push(
+      {
+        inlineData: {
+          data: mockupBase64,
+          mimeType: mockupMimeType,
+        },
+      },
+      {
+        inlineData: {
+          data: designBase64,
+          mimeType: designMimeType,
+        },
+      },
+      { text: prompt }
+    );
 
     // Call Gemini API
     const response = await ai.models.generateContent({
       model: model,
       contents: {
-        parts: [
-          {
-            inlineData: {
-              data: mockupBase64,
-              mimeType: mockupMimeType,
-            },
-          },
-          {
-            inlineData: {
-              data: designBase64,
-              mimeType: designMimeType,
-            },
-          },
-          { text: prompt },
-        ],
+        parts: parts,
       },
     });
 
@@ -192,6 +261,8 @@ Generate a realistic product mockup image.`;
       reduction: `${reduction}%`,
       format: outputFormat,
       quality: quality,
+      designSize: designSize,
+      sizeSpec: selectedSize,
       timestamp: new Date().toISOString()
     });
 
@@ -208,11 +279,16 @@ Generate a realistic product mockup image.`;
 // Start server
 app.listen(PORT, () => {
   console.log('='.repeat(50));
-  console.log('🎨 Mug Mockup API (with JPEG compression)');
+  console.log('🎨 Mug Mockup API (with Consistent Sizing)');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Health: http://localhost:${PORT}/health`);
   console.log(`📍 API: http://localhost:${PORT}/api/generate-mockup`);
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log('='.repeat(50));
+  console.log('\n📏 Available design sizes:');
+  console.log('   • small: 35-40% coverage (subtle)');
+  console.log('   • medium: 50-60% coverage (standard) ⭐');
+  console.log('   • large: 65-75% coverage (prominent)');
   console.log('='.repeat(50));
 });
