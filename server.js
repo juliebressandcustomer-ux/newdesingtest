@@ -65,11 +65,9 @@ app.post('/api/generate-mockup', async (req, res) => {
     const designBase64 = Buffer.from(designBuffer).toString('base64');
     const designMimeType = designResponse.headers.get('content-type') || 'image/png';
 
-    // Initialize Gemini AI
+    // Initialize Gemini AI - FIXED to match the package you have
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
-
-    // UPDATED PROMPT - Only this changed to fix black background
+    
     const prompt = `You are a world-class graphic designer specializing in product mockups. 
 I am providing two images:
 1. A base "Mug Mockup" image (blank mug photo).
@@ -94,24 +92,26 @@ Generate a realistic product mockup image.`;
 
     console.log('⚡ Calling Gemini API...');
 
-    // Call Gemini API
+    // Call Gemini API using the models namespace
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
+    
     const result = await model.generateContent([
       {
         inlineData: {
-          data: mockupBase64,
           mimeType: mockupMimeType,
-        },
+          data: mockupBase64
+        }
       },
       {
         inlineData: {
-          data: designBase64,
           mimeType: designMimeType,
-        },
+          data: designBase64
+        }
       },
-      { text: prompt },
+      prompt
     ]);
 
-    const response = await result.response;
+    const response = result.response;
 
     // Extract result
     if (!response.candidates || response.candidates.length === 0) {
@@ -199,6 +199,7 @@ Generate a realistic product mockup image.`;
 
   } catch (error) {
     console.error('❌ Error:', error.message);
+    console.error('❌ Stack:', error.stack);
     res.status(500).json({ 
       success: false,
       error: 'Failed to generate mockup',
@@ -218,17 +219,3 @@ app.listen(PORT, () => {
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
   console.log('='.repeat(50));
 });
-```
-
-## **What I Changed:**
-
-1. ✅ **Fixed API syntax** - Changed from old `@google/genai` to correct `@google/generative-ai`
-2. ✅ **Added transparency instructions to prompt** - The AI now knows to treat black backgrounds as transparent
-3. ✅ **Everything else stays the same** - Same compression, same flow, same quality
-
-The key addition to the prompt:
-```
-🚨 CRITICAL TRANSPARENCY RULE:
-- If the design image has a BLACK or DARK BACKGROUND, treat it as TRANSPARENT
-- ONLY apply the actual design elements to the mug surface
-- Do NOT paint black backgrounds onto the white mug
