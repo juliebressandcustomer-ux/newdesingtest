@@ -6,6 +6,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import sharp from 'sharp';
 
 dotenv.config();
 
@@ -41,7 +42,7 @@ app.get('/health', (req, res) => {
 // Generate mockup from image URLs
 app.post('/api/generate-mockup', async (req, res) => {
   try {
-    const { mockupUrl, designUrl } = req.body;
+    const { mockupUrl, designUrl, quality = 75 } = req.body;
 
     // Validate inputs
     if (!mockupUrl || !designUrl) {
@@ -54,6 +55,7 @@ app.post('/api/generate-mockup', async (req, res) => {
     console.log('Processing mockup request...');
     console.log('Mockup URL:', mockupUrl);
     console.log('Design URL:', designUrl);
+    console.log('Quality:', quality);
 
     // Fetch images from URLs
     const mockupResponse = await fetch(mockupUrl);
@@ -80,20 +82,25 @@ app.post('/api/generate-mockup', async (req, res) => {
     // Use the same model as AI Studio
     const model = 'gemini-2.5-flash-image';
 
+    // Improved prompt to avoid black backgrounds and handle transparent designs
     const prompt = `You are a world-class graphic designer specializing in product mockups. 
 I am providing two images:
 1. A base "Mug Mockup" image (blank mug photo).
 2. A "Design" image (artwork/logo to apply).
 
-Your task:
+CRITICAL INSTRUCTIONS:
 - Intelligently identify the visible surface of the mug in the base mockup.
-- Map the "Design" image onto that surface.
+- Map the "Design" image onto that surface with perfect alignment.
 - Ensure the design follows the physical curvature of the mug perfectly.
-- Match the lighting, shadows, and reflections of the original scene so the design looks naturally printed on the mug, not just floating on top.
-- The output should be a single final composite image of the mug with the design applied.
-- Retain the original background and surrounding elements of the mockup.
+- Match the lighting, shadows, and reflections of the original scene so the design looks naturally printed on the mug.
+- PRESERVE THE ORIGINAL MUG COLOR: The mug surface should maintain its original color (white, black, colored, etc.).
+- If the design has a transparent background, apply ONLY the visible design elements without any background color.
+- If the design contains black text or dark elements, do NOT add a black background behind them.
+- The design should appear as if it was directly printed on the mug surface, not as a sticker with a background.
+- Retain the original background and surrounding elements of the mockup scene.
+- The final result should look like a professional product photo with the design seamlessly integrated.
 
-Generate a realistic product mockup image.`;
+Generate a realistic, natural-looking product mockup image.`;
 
     console.log('Calling Gemini API...');
 
@@ -129,13 +136,32 @@ Generate a realistic product mockup image.`;
         // Generate unique filename
         const timestamp = Date.now();
         const randomId = crypto.randomBytes(8).toString('hex');
-        const extension = part.inlineData.mimeType.split('/')[1] || 'png';
-        const filename = `mockup_${timestamp}_${randomId}.${extension}`;
+        const filename = `mockup_${timestamp}_${randomId}.jpg`; // Use JPG for better compression
         const filepath = path.join(uploadsDir, filename);
 
-        // Save image to file
-        const imageBuffer = Buffer.from(part.inlineData.data, 'base64');
-        fs.writeFileSync(filepath, imageBuffer);
+        // Convert base64 to buffer
+        const originalBuffer = Buffer.from(part.inlineData.data, 'base64');
+
+        console.log('Original size:', (originalBuffer.length / 1024).toFixed(2), 'KB');
+
+        // Compress image with Sharp (optimized for Etsy)
+        const compressedBuffer = await sharp(originalBuffer)
+          .jpeg({ 
+            quality: quality, // Default 75, good for Etsy
+            progressive: true, // Progressive loading
+            mozjpeg: true // Use mozjpeg for better compression
+          })
+          .resize(2000, 2000, { // Max 2000px for Etsy
+            fit: 'inside',
+            withoutEnlargement: true
+          })
+          .toBuffer();
+
+        console.log('Compressed size:', (compressedBuffer.length / 1024).toFixed(2), 'KB');
+        console.log('Compression ratio:', ((1 - compressedBuffer.length / originalBuffer.length) * 100).toFixed(1), '%');
+
+        // Save compressed image
+        fs.writeFileSync(filepath, compressedBuffer);
 
         console.log('Mockup generated and saved:', filename);
 
@@ -152,8 +178,10 @@ Generate a realistic product mockup image.`;
           success: true,
           url: downloadUrl,
           filename: filename,
-          mimeType: part.inlineData.mimeType,
-          size: imageBuffer.length,
+          mimeType: 'image/jpeg',
+          originalSize: originalBuffer.length,
+          compressedSize: compressedBuffer.length,
+          compressionRatio: `${((1 - compressedBuffer.length / originalBuffer.length) * 100).toFixed(1)}%`,
           timestamp: new Date().toISOString()
         });
       }
@@ -186,22 +214,32 @@ app.get('/download/:filename', (req, res) => {
   res.download(filepath);
 });
 
-// Cleanup old files (optional - runs every hour)
+// Cleanup old files (runs every hour)
 const cleanupOldFiles = () => {
-  const files = fs.readdirSync(uploadsDir);
-  const now = Date.now();
-  const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+  try {
+    const files = fs.readdirSync(uploadsDir);
+    const now = Date.now();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+    let deletedCount = 0;
 
-  files.forEach(file => {
-    const filepath = path.join(uploadsDir, file);
-    const stats = fs.statSync(filepath);
-    const age = now - stats.mtimeMs;
+    files.forEach(file => {
+      const filepath = path.join(uploadsDir, file);
+      const stats = fs.statSync(filepath);
+      const age = now - stats.mtimeMs;
 
-    if (age > maxAge) {
-      fs.unlinkSync(filepath);
-      console.log('Deleted old file:', file);
+      if (age > maxAge) {
+        fs.unlinkSync(filepath);
+        deletedCount++;
+        console.log('Deleted old file:', file);
+      }
+    });
+
+    if (deletedCount > 0) {
+      console.log(`Cleanup: Deleted ${deletedCount} old file(s)`);
     }
-  });
+  } catch (error) {
+    console.error('Cleanup error:', error.message);
+  }
 };
 
 // Run cleanup every hour
@@ -210,12 +248,13 @@ setInterval(cleanupOldFiles, 60 * 60 * 1000);
 // Start server
 app.listen(PORT, () => {
   console.log('='.repeat(50));
-  console.log('🎨 Mug Mockup API Server');
+  console.log('🎨 Mug Mockup API Server (Optimized for Etsy)');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🏥 Health: http://localhost:${PORT}/health`);
   console.log(`📡 API: http://localhost:${PORT}/api/generate-mockup`);
   console.log(`📁 Uploads: ${uploadsDir}`);
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
+  console.log(`📦 Compression: JPEG quality 75%, max 2000px`);
   console.log('='.repeat(50));
 });
