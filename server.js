@@ -2,16 +2,32 @@ import express from 'express';
 import cors from 'cors';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 dotenv.config();
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
 
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// Serve static files from uploads directory
+app.use('/uploads', express.static(uploadsDir));
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -110,14 +126,34 @@ Generate a realistic product mockup image.`;
 
     for (const part of response.candidates[0].content.parts) {
       if (part.inlineData) {
-        const resultImage = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
-        
-        console.log('Mockup generated successfully!');
+        // Generate unique filename
+        const timestamp = Date.now();
+        const randomId = crypto.randomBytes(8).toString('hex');
+        const extension = part.inlineData.mimeType.split('/')[1] || 'png';
+        const filename = `mockup_${timestamp}_${randomId}.${extension}`;
+        const filepath = path.join(uploadsDir, filename);
+
+        // Save image to file
+        const imageBuffer = Buffer.from(part.inlineData.data, 'base64');
+        fs.writeFileSync(filepath, imageBuffer);
+
+        console.log('Mockup generated and saved:', filename);
+
+        // Get base URL (Railway provides this in headers or env)
+        const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
+          ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+          : process.env.BASE_URL 
+          ? process.env.BASE_URL
+          : `http://localhost:${PORT}`;
+
+        const downloadUrl = `${baseUrl}/uploads/${filename}`;
         
         return res.json({
           success: true,
-          image: resultImage,
+          url: downloadUrl,
+          filename: filename,
           mimeType: part.inlineData.mimeType,
+          size: imageBuffer.length,
           timestamp: new Date().toISOString()
         });
       }
@@ -135,6 +171,42 @@ Generate a realistic product mockup image.`;
   }
 });
 
+// Download endpoint (alternative direct download)
+app.get('/download/:filename', (req, res) => {
+  const filename = req.params.filename;
+  const filepath = path.join(uploadsDir, filename);
+
+  if (!fs.existsSync(filepath)) {
+    return res.status(404).json({ 
+      success: false,
+      error: 'File not found' 
+    });
+  }
+
+  res.download(filepath);
+});
+
+// Cleanup old files (optional - runs every hour)
+const cleanupOldFiles = () => {
+  const files = fs.readdirSync(uploadsDir);
+  const now = Date.now();
+  const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+  files.forEach(file => {
+    const filepath = path.join(uploadsDir, file);
+    const stats = fs.statSync(filepath);
+    const age = now - stats.mtimeMs;
+
+    if (age > maxAge) {
+      fs.unlinkSync(filepath);
+      console.log('Deleted old file:', file);
+    }
+  });
+};
+
+// Run cleanup every hour
+setInterval(cleanupOldFiles, 60 * 60 * 1000);
+
 // Start server
 app.listen(PORT, () => {
   console.log('='.repeat(50));
@@ -143,6 +215,7 @@ app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🏥 Health: http://localhost:${PORT}/health`);
   console.log(`📡 API: http://localhost:${PORT}/api/generate-mockup`);
+  console.log(`📁 Uploads: ${uploadsDir}`);
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
   console.log('='.repeat(50));
 });
