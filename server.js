@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -57,11 +57,8 @@ app.post('/api/generate-mockup', async (req, res) => {
     const designMimeType = designResponse.headers.get('content-type') || 'image/png';
 
     // Initialize Gemini AI
-    const ai = new GoogleGenAI({ 
-      apiKey: process.env.GEMINI_API_KEY 
-    });
-
-    const model = 'gemini-2.5-flash-image';
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
     const prompt = `You are a world-class graphic designer specializing in product mockups. 
 I am providing two images:
@@ -81,26 +78,23 @@ Generate a realistic product mockup image.`;
     console.log('Calling Gemini API...');
 
     // Call Gemini API
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: {
-        parts: [
-          {
-            inlineData: {
-              data: mockupBase64,
-              mimeType: mockupMimeType,
-            },
-          },
-          {
-            inlineData: {
-              data: designBase64,
-              mimeType: designMimeType,
-            },
-          },
-          { text: prompt },
-        ],
+    const result = await model.generateContent([
+      {
+        inlineData: {
+          data: mockupBase64,
+          mimeType: mockupMimeType,
+        },
       },
-    });
+      {
+        inlineData: {
+          data: designBase64,
+          mimeType: designMimeType,
+        },
+      },
+      prompt
+    ]);
+
+    const response = await result.response;
 
     // Extract result
     if (!response.candidates || response.candidates.length === 0) {
@@ -140,8 +134,8 @@ app.listen(PORT, () => {
   console.log('🎨 Mug Mockup API Server');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📍 Health: http://localhost:${PORT}/health`);
-  console.log(`📍 API: http://localhost:${PORT}/api/generate-mockup`);
+  console.log(`🏥 Health: http://localhost:${PORT}/health`);
+  console.log(`📡 API: http://localhost:${PORT}/api/generate-mockup`);
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
   console.log('='.repeat(50));
 });
