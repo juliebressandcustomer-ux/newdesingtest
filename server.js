@@ -14,6 +14,20 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Mug Mockup API',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/health',
+      generateMockup: '/api/generate-mockup'
+    },
+    documentation: 'https://github.com/YOUR_USERNAME/mugmockup-api'
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -65,7 +79,7 @@ app.post('/api/generate-mockup', async (req, res) => {
     const designBase64 = Buffer.from(designBuffer).toString('base64');
     const designMimeType = designResponse.headers.get('content-type') || 'image/png';
 
-    // Initialize Gemini AI - FIXED to match the package you have
+    // Initialize Gemini AI
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     
     const prompt = `You are a world-class graphic designer specializing in product mockups. 
@@ -92,7 +106,7 @@ Generate a realistic product mockup image.`;
 
     console.log('⚡ Calling Gemini API...');
 
-    // Call Gemini API using the models namespace
+    // Call Gemini API
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-exp" });
     
     const result = await model.generateContent([
