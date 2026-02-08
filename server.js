@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import dotenv from 'dotenv';
 import sharp from 'sharp';
 
@@ -82,12 +82,9 @@ app.post('/api/generate-mockup', async (req, res) => {
       }
     }
 
-    // Initialize Gemini AI
-    const ai = new GoogleGenAI({ 
-      apiKey: process.env.GEMINI_API_KEY 
-    });
-
-    const model = 'gemini-2.5-flash-image';
+    // Initialize Gemini AI (FIXED)
+    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
     // Design size specifications
     const sizeSpecs = {
@@ -188,13 +185,9 @@ Generate a realistic, professionally-sized product mockup with proper transparen
       { text: prompt }
     );
 
-    // Call Gemini API
-    const response = await ai.models.generateContent({
-      model: model,
-      contents: {
-        parts: parts,
-      },
-    });
+    // Call Gemini API (FIXED)
+    const result = await model.generateContent(parts);
+    const response = await result.response;
 
     // Extract result
     if (!response.candidates || response.candidates.length === 0) {
@@ -284,6 +277,7 @@ Generate a realistic, professionally-sized product mockup with proper transparen
 
   } catch (error) {
     console.error('❌ Error:', error.message);
+    console.error('❌ Stack:', error.stack);
     res.status(500).json({ 
       success: false,
       error: 'Failed to generate mockup',
@@ -312,15 +306,3 @@ app.listen(PORT, () => {
   console.log('   • White mug stays white outside design');
   console.log('='.repeat(50));
 });
-```
-
-## **Key Changes to Fix Background Issue:**
-
-### **Added Critical Background Rules:**
-```
-🚨 CRITICAL BACKGROUND/TRANSPARENCY RULES:
-- The mug surface MUST remain WHITE wherever there is NO design
-- If the design has a black background, DO NOT apply black to the mug
-- ONLY apply the actual design elements (text, graphics, illustrations)
-- Ignore any background color in the design image
-- Think of the design as a sticker or decal
