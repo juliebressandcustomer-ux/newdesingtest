@@ -29,11 +29,11 @@ app.post('/api/generate-mockup', async (req, res) => {
     const { 
       mockupUrl, 
       designUrl,
-      referenceUrl,           // NEW: Optional reference image for sizing
+      referenceUrl,           // Optional reference image for sizing
       outputFormat = 'jpeg',  // 'jpeg' or 'png'
       quality = 85,           // 1-100
       maxWidth = 2000,        // pixels
-      designSize = 'medium'   // NEW: 'small', 'medium', 'large'
+      designSize = 'medium'   // 'small', 'medium', 'large'
     } = req.body;
 
     // Validate inputs
@@ -110,11 +110,19 @@ app.post('/api/generate-mockup', async (req, res) => {
 
     const selectedSize = sizeSpecs[designSize] || sizeSpecs.medium;
 
-    // Build the prompt with reference handling
+    // Build the prompt with reference handling and transparency fix
     let prompt = `You are a world-class graphic designer specializing in product mockups. 
 
 I am providing ${referenceBase64 ? 'three' : 'two'} images:
 ${referenceBase64 ? '1. A REFERENCE mockup showing EXACTLY the size and positioning I want you to replicate\n2. A base "Mug Mockup" image (blank mug photo)\n3. A "Design" image (artwork/logo to apply)' : '1. A base "Mug Mockup" image (blank mug photo)\n2. A "Design" image (artwork/logo to apply)'}
+
+🚨 CRITICAL BACKGROUND/TRANSPARENCY RULES:
+- The mug surface MUST remain WHITE (or its original color) wherever there is NO design
+- If the design has a black background, DO NOT apply black to the mug - treat black backgrounds as transparent
+- ONLY apply the actual design elements (text, graphics, illustrations) to the mug
+- Ignore any background color in the design image - backgrounds should be treated as transparent
+- The white mug should stay completely white except where the design artwork appears
+- Think of the design as a sticker or decal - only the printed elements go on the mug, not the background
 
 CRITICAL SIZING REQUIREMENTS:
 ${referenceBase64 
@@ -129,16 +137,24 @@ POSITIONING REQUIREMENTS:
 
 QUALITY REQUIREMENTS:
 - Intelligently identify the visible surface of the mug in the base mockup
-- Map the design onto that surface following the physical curvature perfectly
+- Map ONLY the design elements (not backgrounds) onto that surface
+- Follow the physical curvature of the mug perfectly
 - Apply perspective distortion to match the mug's cylindrical shape
 - Match the lighting, shadows, and reflections of the original scene
 - The design should look naturally printed on the mug, not pasted on
 - Retain the original background and surrounding elements of the mockup
 - Ensure crisp, clear design details
+- Keep the mug's original white color intact outside the design area
+
+EXAMPLES OF CORRECT HANDLING:
+✅ Design with black background → Apply only the colored/white elements, ignore black background
+✅ Design with white text on black → Apply only the white text as white print on the mug
+✅ Colorful logo on black background → Apply only the logo, keep mug white around it
+✅ Text design → Apply text cleanly without any background rectangles or patches
 
 ${referenceBase64 ? 'REMEMBER: The reference image is your sizing guide. Match it exactly!' : `REMEMBER: Consistency is KEY. Every mockup with "${designSize}" size should have the design at ${selectedSize.coverage} of mug width.`}
 
-Generate a realistic, professionally-sized product mockup image.`;
+Generate a realistic, professionally-sized product mockup with proper transparency handling.`;
 
     console.log('⚡ Calling Gemini API...');
 
@@ -279,7 +295,7 @@ Generate a realistic, professionally-sized product mockup image.`;
 // Start server
 app.listen(PORT, () => {
   console.log('='.repeat(50));
-  console.log('🎨 Mug Mockup API (with Consistent Sizing)');
+  console.log('🎨 Mug Mockup API (Fixed Transparency)');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Health: http://localhost:${PORT}/health`);
@@ -290,5 +306,21 @@ app.listen(PORT, () => {
   console.log('   • small: 35-40% coverage (subtle)');
   console.log('   • medium: 50-60% coverage (standard) ⭐');
   console.log('   • large: 65-75% coverage (prominent)');
+  console.log('\n🎨 Transparency handling:');
+  console.log('   • Black backgrounds treated as transparent');
+  console.log('   • Only design elements applied to mug');
+  console.log('   • White mug stays white outside design');
   console.log('='.repeat(50));
 });
+```
+
+## **Key Changes to Fix Background Issue:**
+
+### **Added Critical Background Rules:**
+```
+🚨 CRITICAL BACKGROUND/TRANSPARENCY RULES:
+- The mug surface MUST remain WHITE wherever there is NO design
+- If the design has a black background, DO NOT apply black to the mug
+- ONLY apply the actual design elements (text, graphics, illustrations)
+- Ignore any background color in the design image
+- Think of the design as a sticker or decal
