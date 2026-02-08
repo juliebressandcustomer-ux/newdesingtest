@@ -23,6 +23,28 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Helper function to ensure image is in PNG format for Gemini
+async function ensurePNG(buffer, originalMimeType) {
+  try {
+    // If already PNG, return as-is
+    if (originalMimeType === 'image/png') {
+      return { buffer, mimeType: 'image/png' };
+    }
+    
+    console.log(`   Converting ${originalMimeType} to PNG...`);
+    
+    // Convert to PNG
+    const pngBuffer = await sharp(buffer)
+      .png()
+      .toBuffer();
+    
+    return { buffer: pngBuffer, mimeType: 'image/png' };
+  } catch (error) {
+    console.error('Error converting image:', error);
+    throw new Error(`Failed to convert image to PNG: ${error.message}`);
+  }
+}
+
 // Generate mockup with optional JPEG compression
 app.post('/api/generate-mockup', async (req, res) => {
   try {
@@ -52,37 +74,58 @@ app.post('/api/generate-mockup', async (req, res) => {
     console.log('⚙️ Output format:', outputFormat);
     console.log('⚙️ Quality:', quality);
 
-    // Fetch images from URLs
+    // Fetch mockup image
+    console.log('📥 Fetching mockup image...');
     const mockupResponse = await fetch(mockupUrl);
     if (!mockupResponse.ok) {
       throw new Error(`Failed to fetch mockup: ${mockupResponse.statusText}`);
     }
-    const mockupBuffer = await mockupResponse.arrayBuffer();
-    const mockupBase64 = Buffer.from(mockupBuffer).toString('base64');
-    const mockupMimeType = mockupResponse.headers.get('content-type') || 'image/png';
+    let mockupBuffer = Buffer.from(await mockupResponse.arrayBuffer());
+    const mockupOriginalMimeType = mockupResponse.headers.get('content-type') || 'image/png';
+    console.log('   Original format:', mockupOriginalMimeType);
+    
+    // Convert mockup to PNG for Gemini
+    const mockupConverted = await ensurePNG(mockupBuffer, mockupOriginalMimeType);
+    const mockupBase64 = mockupConverted.buffer.toString('base64');
+    const mockupMimeType = mockupConverted.mimeType;
+    console.log('   Using format:', mockupMimeType);
 
+    // Fetch design image
+    console.log('📥 Fetching design image...');
     const designResponse = await fetch(designUrl);
     if (!designResponse.ok) {
       throw new Error(`Failed to fetch design: ${designResponse.statusText}`);
     }
-    const designBuffer = await designResponse.arrayBuffer();
-    const designBase64 = Buffer.from(designBuffer).toString('base64');
-    const designMimeType = designResponse.headers.get('content-type') || 'image/png';
+    let designBuffer = Buffer.from(await designResponse.arrayBuffer());
+    const designOriginalMimeType = designResponse.headers.get('content-type') || 'image/png';
+    console.log('   Original format:', designOriginalMimeType);
+    
+    // Convert design to PNG for Gemini
+    const designConverted = await ensurePNG(designBuffer, designOriginalMimeType);
+    const designBase64 = designConverted.buffer.toString('base64');
+    const designMimeType = designConverted.mimeType;
+    console.log('   Using format:', designMimeType);
 
     // Fetch reference image if provided
     let referenceBase64 = null;
     let referenceMimeType = null;
     if (referenceUrl) {
+      console.log('📥 Fetching reference image...');
       const referenceResponse = await fetch(referenceUrl);
       if (referenceResponse.ok) {
-        const referenceBuffer = await referenceResponse.arrayBuffer();
-        referenceBase64 = Buffer.from(referenceBuffer).toString('base64');
-        referenceMimeType = referenceResponse.headers.get('content-type') || 'image/png';
-        console.log('✅ Reference image loaded');
+        let referenceBuffer = Buffer.from(await referenceResponse.arrayBuffer());
+        const referenceOriginalMimeType = referenceResponse.headers.get('content-type') || 'image/png';
+        console.log('   Original format:', referenceOriginalMimeType);
+        
+        // Convert reference to PNG
+        const referenceConverted = await ensurePNG(referenceBuffer, referenceOriginalMimeType);
+        referenceBase64 = referenceConverted.buffer.toString('base64');
+        referenceMimeType = referenceConverted.mimeType;
+        console.log('✅ Reference image loaded and converted');
       }
     }
 
-    // Initialize Gemini AI (FIXED)
+    // Initialize Gemini AI
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
 
@@ -185,7 +228,7 @@ Generate a realistic, professionally-sized product mockup with proper transparen
       { text: prompt }
     );
 
-    // Call Gemini API (FIXED)
+    // Call Gemini API
     const result = await model.generateContent(parts);
     const response = await result.response;
 
@@ -216,7 +259,7 @@ Generate a realistic, professionally-sized product mockup with proper transparen
     console.log('📦 Original size:', originalSizeMB, 'MB');
 
     // 🗜️ CONVERT TO JPEG & COMPRESS
-    console.log('🗜️ Converting to JPEG and compressing...');
+    console.log('🗜️ Converting to output format and compressing...');
 
     let processedBuffer;
     let finalMimeType;
@@ -289,7 +332,7 @@ Generate a realistic, professionally-sized product mockup with proper transparen
 // Start server
 app.listen(PORT, () => {
   console.log('='.repeat(50));
-  console.log('🎨 Mug Mockup API (Fixed Transparency)');
+  console.log('🎨 Mug Mockup API (PNG Compatible)');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Health: http://localhost:${PORT}/health`);
@@ -300,7 +343,8 @@ app.listen(PORT, () => {
   console.log('   • small: 35-40% coverage (subtle)');
   console.log('   • medium: 50-60% coverage (standard) ⭐');
   console.log('   • large: 65-75% coverage (prominent)');
-  console.log('\n🎨 Transparency handling:');
+  console.log('\n🎨 Input format: PNG (auto-converted if needed)');
+  console.log('🎨 Transparency handling:');
   console.log('   • Black backgrounds treated as transparent');
   console.log('   • Only design elements applied to mug');
   console.log('   • White mug stays white outside design');
