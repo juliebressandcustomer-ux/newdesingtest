@@ -1,8 +1,7 @@
 import express from 'express';
 import cors from 'cors';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
-import sharp from 'sharp';
 
 dotenv.config();
 
@@ -14,20 +13,6 @@ app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    name: 'Mug Mockup API',
-    version: '1.0.0',
-    status: 'running',
-    endpoints: {
-      health: '/health',
-      generateMockup: '/api/generate-mockup'
-    },
-    documentation: 'https://github.com/YOUR_USERNAME/mugmockup-api'
-  });
-});
-
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
@@ -37,16 +22,10 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Generate mockup with optional JPEG compression
+// Generate mockup from image URLs
 app.post('/api/generate-mockup', async (req, res) => {
   try {
-    const { 
-      mockupUrl, 
-      designUrl, 
-      outputFormat = 'jpeg',  // 'jpeg' ou 'png'
-      quality = 85,           // 1-100
-      maxWidth = 2000         // pixels
-    } = req.body;
+    const { mockupUrl, designUrl } = req.body;
 
     // Validate inputs
     if (!mockupUrl || !designUrl) {
@@ -56,16 +35,14 @@ app.post('/api/generate-mockup', async (req, res) => {
       });
     }
 
-    console.log('🎨 Processing mockup request...');
-    console.log('📸 Mockup URL:', mockupUrl);
-    console.log('🎨 Design URL:', designUrl);
-    console.log('⚙️ Output format:', outputFormat);
-    console.log('⚙️ Quality:', quality);
+    console.log('Processing mockup request...');
+    console.log('Mockup URL:', mockupUrl);
+    console.log('Design URL:', designUrl);
 
     // Fetch images from URLs
     const mockupResponse = await fetch(mockupUrl);
     if (!mockupResponse.ok) {
-      throw new Error(`Failed to fetch mockup: ${mockupResponse.statusText}`);
+      throw new Error(`Failed to fetch mockup image: ${mockupResponse.statusText}`);
     }
     const mockupBuffer = await mockupResponse.arrayBuffer();
     const mockupBase64 = Buffer.from(mockupBuffer).toString('base64');
@@ -73,15 +50,19 @@ app.post('/api/generate-mockup', async (req, res) => {
 
     const designResponse = await fetch(designUrl);
     if (!designResponse.ok) {
-      throw new Error(`Failed to fetch design: ${designResponse.statusText}`);
+      throw new Error(`Failed to fetch design image: ${designResponse.statusText}`);
     }
     const designBuffer = await designResponse.arrayBuffer();
     const designBase64 = Buffer.from(designBuffer).toString('base64');
     const designMimeType = designResponse.headers.get('content-type') || 'image/png';
 
     // Initialize Gemini AI
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    
+    const ai = new GoogleGenAI({ 
+      apiKey: process.env.GEMINI_API_KEY 
+    });
+
+    const model = 'gemini-2.5-flash-image';
+
     const prompt = `You are a world-class graphic designer specializing in product mockups. 
 I am providing two images:
 1. A base "Mug Mockup" image (blank mug photo).
@@ -91,129 +72,60 @@ Your task:
 - Intelligently identify the visible surface of the mug in the base mockup.
 - Map the "Design" image onto that surface.
 - Ensure the design follows the physical curvature of the mug perfectly.
-- Match the lighting, shadows, and reflections of the original scene so the design looks naturally printed on the mug.
+- Match the lighting, shadows, and reflections of the original scene so the design looks naturally printed on the mug, not just floating on top.
 - The output should be a single final composite image of the mug with the design applied.
 - Retain the original background and surrounding elements of the mockup.
 
-🚨 CRITICAL TRANSPARENCY RULE:
-- If the design image has a BLACK or DARK BACKGROUND, treat it as TRANSPARENT
-- ONLY apply the actual design elements (text, graphics, illustrations) to the mug surface
-- The mug should remain WHITE (or its original color) where there is no design
-- Do NOT paint black backgrounds onto the white mug
-- Think of the design as a transparent sticker - only the visible artwork transfers to the mug
-
 Generate a realistic product mockup image.`;
 
-    console.log('⚡ Calling Gemini API...');
+    console.log('Calling Gemini API...');
 
-    // Call Gemini API - FIXED MODEL NAME
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: mockupMimeType,
-          data: mockupBase64
-        }
+    // Call Gemini API
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: mockupBase64,
+              mimeType: mockupMimeType,
+            },
+          },
+          {
+            inlineData: {
+              data: designBase64,
+              mimeType: designMimeType,
+            },
+          },
+          { text: prompt },
+        ],
       },
-      {
-        inlineData: {
-          mimeType: designMimeType,
-          data: designBase64
-        }
-      },
-      prompt
-    ]);
-
-    const response = result.response;
+    });
 
     // Extract result
     if (!response.candidates || response.candidates.length === 0) {
       throw new Error("No response from AI model");
     }
 
-    let geminiImageBase64 = null;
-    let geminiMimeType = 'image/png';
-
     for (const part of response.candidates[0].content.parts) {
       if (part.inlineData) {
-        geminiImageBase64 = part.inlineData.data;
-        geminiMimeType = part.inlineData.mimeType;
-        break;
+        const resultImage = `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
+        
+        console.log('Mockup generated successfully!');
+        
+        return res.json({
+          success: true,
+          image: resultImage,
+          mimeType: part.inlineData.mimeType,
+          timestamp: new Date().toISOString()
+        });
       }
     }
 
-    if (!geminiImageBase64) {
-      throw new Error("No image in response");
-    }
-
-    const originalBuffer = Buffer.from(geminiImageBase64, 'base64');
-    const originalSizeMB = (originalBuffer.length / 1024 / 1024).toFixed(2);
-    
-    console.log('✅ Mockup generated by Gemini');
-    console.log('📦 Original size:', originalSizeMB, 'MB');
-
-    // 🗜️ CONVERT TO JPEG & COMPRESS
-    console.log('🗜️ Converting to JPEG and compressing...');
-
-    let processedBuffer;
-    let finalMimeType;
-
-    if (outputFormat === 'jpeg' || outputFormat === 'jpg') {
-      // Convert to JPEG with quality control
-      processedBuffer = await sharp(originalBuffer)
-        .resize(maxWidth, maxWidth, { 
-          fit: 'inside',
-          withoutEnlargement: true 
-        })
-        .jpeg({ 
-          quality: quality,
-          mozjpeg: true  // Better compression
-        })
-        .toBuffer();
-      
-      finalMimeType = 'image/jpeg';
-    } else {
-      // Keep as PNG but optimize
-      processedBuffer = await sharp(originalBuffer)
-        .resize(maxWidth, maxWidth, { 
-          fit: 'inside',
-          withoutEnlargement: true 
-        })
-        .png({ 
-          quality: quality,
-          compressionLevel: 9
-        })
-        .toBuffer();
-      
-      finalMimeType = 'image/png';
-    }
-
-    const processedSizeKB = (processedBuffer.length / 1024).toFixed(2);
-    const reduction = ((1 - processedBuffer.length / originalBuffer.length) * 100).toFixed(0);
-
-    console.log('✅ Processed size:', processedSizeKB, 'KB');
-    console.log('💰 Reduction:', reduction, '%');
-    console.log('📄 Format:', finalMimeType);
-
-    // Return processed image
-    const processedBase64 = processedBuffer.toString('base64');
-    
-    return res.json({
-      success: true,
-      image: `data:${finalMimeType};base64,${processedBase64}`,
-      mimeType: finalMimeType,
-      originalSizeMB: originalSizeMB,
-      processedSizeKB: processedSizeKB,
-      reduction: `${reduction}%`,
-      format: outputFormat,
-      quality: quality,
-      timestamp: new Date().toISOString()
-    });
+    throw new Error("No image in response");
 
   } catch (error) {
-    console.error('❌ Error:', error.message);
-    console.error('❌ Stack:', error.stack);
+    console.error('Error generating mockup:', error.message);
     res.status(500).json({ 
       success: false,
       error: 'Failed to generate mockup',
@@ -225,7 +137,7 @@ Generate a realistic product mockup image.`;
 // Start server
 app.listen(PORT, () => {
   console.log('='.repeat(50));
-  console.log('🎨 Mug Mockup API (with JPEG compression)');
+  console.log('🎨 Mug Mockup API Server');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📍 Health: http://localhost:${PORT}/health`);
