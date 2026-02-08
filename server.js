@@ -1,6 +1,6 @@
 import express from 'express';
 import cors from 'cors';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -56,9 +56,13 @@ app.post('/api/generate-mockup', async (req, res) => {
     const designBase64 = Buffer.from(designBuffer).toString('base64');
     const designMimeType = designResponse.headers.get('content-type') || 'image/png';
 
-    // Initialize Gemini AI
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    // Initialize Gemini AI (using AI Studio SDK)
+    const ai = new GoogleGenAI({ 
+      apiKey: process.env.GEMINI_API_KEY 
+    });
+
+    // Use the same model as AI Studio
+    const model = 'gemini-2.5-flash-image';
 
     const prompt = `You are a world-class graphic designer specializing in product mockups. 
 I am providing two images:
@@ -77,24 +81,27 @@ Generate a realistic product mockup image.`;
 
     console.log('Calling Gemini API...');
 
-    // Call Gemini API
-    const result = await model.generateContent([
-      {
-        inlineData: {
-          data: mockupBase64,
-          mimeType: mockupMimeType,
-        },
+    // Call Gemini API (using AI Studio SDK format)
+    const response = await ai.models.generateContent({
+      model: model,
+      contents: {
+        parts: [
+          {
+            inlineData: {
+              data: mockupBase64,
+              mimeType: mockupMimeType,
+            },
+          },
+          {
+            inlineData: {
+              data: designBase64,
+              mimeType: designMimeType,
+            },
+          },
+          { text: prompt },
+        ],
       },
-      {
-        inlineData: {
-          data: designBase64,
-          mimeType: designMimeType,
-        },
-      },
-      prompt
-    ]);
-
-    const response = await result.response;
+    });
 
     // Extract result
     if (!response.candidates || response.candidates.length === 0) {
