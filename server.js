@@ -74,72 +74,60 @@ app.post('/api/generate-mockup', async (req, res) => {
     const designBase64 = Buffer.from(designBuffer).toString('base64');
     const designMimeType = designResponse.headers.get('content-type') || 'image/png';
 
-    // Initialize Gemini AI (using AI Studio SDK)
+    // Initialize Gemini AI
     const ai = new GoogleGenAI({ 
       apiKey: process.env.GEMINI_API_KEY 
     });
 
-    // Use the same model as AI Studio
     const model = 'gemini-2.5-flash-image';
 
-    // ULTRA STRICT prompt to prevent background addition
-    const prompt = `You are a professional product mockup specialist. Your task is to apply a design onto a mug mockup.
+    // FULL COVERAGE prompt — design must wrap entire mug surface
+    const prompt = `You are a professional product mockup specialist. Your ONLY task is to wrap the provided design image fully around the mug in the photo.
 
-CRITICAL RULES - FOLLOW EXACTLY:
+PLACEMENT RULES — CRITICAL:
+1. The design must cover the ENTIRE visible surface of the mug from left edge to right edge
+2. The design must fill the mug vertically from just below the rim all the way down to just above the base
+3. Scale the design UP to completely fill the mug surface — do NOT leave any blank white/colored mug surface visible
+4. The design should wrap around the mug following its natural cylindrical curvature
+5. Think of it as a full-wrap sublimation print — the design covers 100% of the mug body
 
-1. DO NOT ADD ANY BACKGROUND RECTANGLES OR SHAPES
-   - The design should NOT have a black background
-   - The design should NOT have a white background  
-   - The design should NOT have ANY colored background
-   - NO rectangular shapes behind the design
-   - NO squares, circles, or any geometric shapes as backgrounds
+WRAPPING & PERSPECTIVE RULES:
+- Apply realistic cylindrical perspective distortion so the design follows the mug's curve
+- The center portion of the design faces the camera and is most visible
+- The left and right edges of the design curve away naturally with the mug shape
+- Apply the original photo's lighting, highlights and shadows on top of the design
+- The design must look like it was sublimation-printed directly into the ceramic — not a sticker
 
-2. TRANSPARENT DESIGN HANDLING:
-   - If the design has transparent areas, KEEP THEM TRANSPARENT
-   - Only the visible design elements (text, graphics, colors) should appear on the mug
-   - The mug's original surface must show through transparent areas
+TRANSPARENCY RULES:
+- Transparent/empty areas in the design = mug ceramic surface shows through naturally
+- Do NOT add any background color, rectangle, or shape behind the design elements
+- Only the actual design artwork (text, illustrations, colors) appears on the mug surface
+- White mug stays white wherever the design is transparent
 
-3. MUG SURFACE PRESERVATION:
-   - The mug surface color MUST remain visible
-   - White mugs stay white
-   - Colored mugs keep their color
-   - Black mugs stay black
-   - DO NOT cover the mug surface with any background color
+FORBIDDEN — NEVER DO THESE:
+❌ Leaving large blank uncovered areas on the mug body
+❌ Placing the design only in the center as a small patch or sticker
+❌ Shrinking the design so it only covers part of the mug
+❌ Adding any background rectangle, square, or shape behind the design
+❌ Making the design look like a label with borders or white edges
+❌ Changing the mug shape, handle, color or background of the original photo
 
-4. DESIGN APPLICATION:
-   - Apply ONLY the design elements directly onto the mug surface
-   - The design should look like it's printed/painted directly on the ceramic
-   - Follow the mug's curvature and perspective
-   - Match the scene's lighting and shadows
-
-5. WHAT THE FINAL IMAGE SHOULD LOOK LIKE:
-   - A mug with the design appearing as if screen-printed on it
-   - NO background layer between the mug and design
-   - The design elements blend naturally with the mug surface
-   - Professional product photography quality
-
-FORBIDDEN ACTIONS:
-❌ Adding a black rectangle behind the design
-❌ Adding a white rectangle behind the design
-❌ Creating any background shape or layer
-❌ Covering the mug surface with solid colors
-❌ Making the design look like a sticker with edges
-
-REQUIRED RESULT:
-✅ Design elements applied directly to mug surface
-✅ Mug color visible everywhere the design is transparent
-✅ Natural, realistic product photo appearance
-✅ No artificial backgrounds or shapes
-
-Think of it like screen printing or direct ceramic printing - the design is part of the mug surface, not a layer on top of it.`;
+REQUIRED — ALWAYS DO THESE:
+✅ Design fills the FULL visible mug surface from edge to edge, top to bottom
+✅ Realistic full-wrap sublimation print appearance
+✅ Natural cylindrical perspective and curvature applied to the design
+✅ Original photo lighting and shadows preserved and applied over the design
+✅ Professional Etsy product photo quality result
+✅ The mug handle, background and overall scene remain unchanged`;
 
     console.log('Calling Gemini API...');
 
-    // Call Gemini API (using AI Studio SDK format)
+    // Call Gemini API — prompt FIRST for better instruction following
     const response = await ai.models.generateContent({
       model: model,
       contents: {
         parts: [
+          { text: prompt },
           {
             inlineData: {
               data: mockupBase64,
@@ -152,7 +140,6 @@ Think of it like screen printing or direct ceramic printing - the design is part
               mimeType: designMimeType,
             },
           },
-          { text: prompt },
         ],
       },
     });
@@ -245,7 +232,7 @@ app.get('/download/:filename', (req, res) => {
   res.download(filepath);
 });
 
-// Cleanup old files
+// Cleanup old files (runs every hour, deletes files older than 24h)
 const cleanupOldFiles = () => {
   try {
     const files = fs.readdirSync(uploadsDir);
@@ -277,13 +264,14 @@ setInterval(cleanupOldFiles, 60 * 60 * 1000);
 // Start server
 app.listen(PORT, () => {
   console.log('='.repeat(50));
-  console.log('🎨 Mug Mockup API Server v2.0');
+  console.log('🎨 Mug Mockup API Server v3.0');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🏥 Health: http://localhost:${PORT}/health`);
   console.log(`📡 API: http://localhost:${PORT}/api/generate-mockup`);
   console.log(`📁 Uploads: ${uploadsDir}`);
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
-  console.log(`🎯 Anti-Background: ULTRA STRICT MODE`);
+  console.log(`🎯 Full-Wrap Coverage: ENABLED`);
+  console.log(`📐 Prompt Order: TEXT FIRST (better instruction following)`);
   console.log('='.repeat(50));
 });
