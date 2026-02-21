@@ -87,8 +87,43 @@ app.post('/api/generate-mockup', async (req, res) => {
       throw new Error(`Failed to fetch design image: ${designResponse.statusText}`);
     }
     const designBuffer = await designResponse.arrayBuffer();
-    const designBase64 = Buffer.from(designBuffer).toString('base64');
-    const designMimeType = designResponse.headers.get('content-type') || 'image/png';
+    
+    // Remove white background from design (convert white to transparent)
+    console.log('Removing white background from design...');
+    const processedDesign = await sharp(Buffer.from(designBuffer))
+      .ensureAlpha() // Add alpha channel if not present
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    
+    const { data, info } = processedDesign;
+    const pixels = new Uint8ClampedArray(data);
+    
+    // Convert white/near-white pixels to transparent
+    const threshold = 240; // Adjust this value (0-255) - higher = more aggressive removal
+    for (let i = 0; i < pixels.length; i += 4) {
+      const r = pixels[i];
+      const g = pixels[i + 1];
+      const b = pixels[i + 2];
+      
+      // If pixel is white or near-white, make it transparent
+      if (r > threshold && g > threshold && b > threshold) {
+        pixels[i + 3] = 0; // Set alpha to 0 (transparent)
+      }
+    }
+    
+    // Convert back to PNG with transparency
+    const transparentDesignBuffer = await sharp(pixels, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: 4
+      }
+    })
+    .png()
+    .toBuffer();
+    
+    const designBase64 = transparentDesignBuffer.toString('base64');
+    const designMimeType = 
 
     // Initialize Gemini AI
     const ai = new GoogleGenAI({ 
@@ -98,24 +133,24 @@ app.post('/api/generate-mockup', async (req, res) => {
     // Updated to newer model for better results
     const model = 'gemini-2.0-flash-exp';
 
-    // IMPROVED SIMPLIFIED PROMPT - More focused, less overwhelming
-    const prompt = `You are a professional product mockup specialist. Apply the design image to the mug as a realistic full-wrap sublimation print.
+    // OPTIMIZED PROMPT - Handles white background designs correctly
+    const prompt = `You are a professional product mockup specialist. Apply the design elements from the second image onto the white mug in the first image.
 
-CRITICAL REQUIREMENTS:
+CRITICAL INSTRUCTIONS:
 
-1. COVERAGE: The design must completely wrap around the visible mug surface from edge to edge, top to bottom. No blank mug surface should be visible.
+1. EXTRACT ONLY THE DESIGN ELEMENTS: The second image shows the design on a white background. Only apply the actual design elements (text, graphics, colors, patterns) to the mug. The white background in the design image should be ignored - it represents the mug's natural white ceramic surface.
 
-2. PERSPECTIVE: Apply realistic cylindrical distortion so the design naturally follows the mug's curved shape. The center portion faces forward, edges curve away.
+2. FULL WRAP COVERAGE: Scale and wrap the design elements to completely cover the visible mug surface from left edge to right edge, top to bottom. The design should fill the entire cylindrical surface.
 
-3. REALISM: The design must look like it was printed directly into the ceramic using sublimation printing - NOT like a sticker or label pasted on.
+3. NATURAL PERSPECTIVE: Apply realistic cylindrical distortion so design elements curve naturally with the mug shape. Center elements face forward, edges curve away following the mug's form.
 
-4. LIGHTING: Preserve all original shadows, highlights, and lighting from the mug photo. Apply these effects OVER the design.
+4. SUBLIMATION PRINT QUALITY: The design must look printed directly into the ceramic, not like a sticker. Apply the original photo's lighting, shadows, and highlights over the design.
 
-5. TRANSPARENCY: If the design has transparent areas, the white mug surface shows through naturally. Do not add any background rectangles or shapes.
+5. PRESERVE ORIGINAL: Keep the mug handle, background, table, and entire scene unchanged. Only modify the mug's outer surface with the design.
 
-6. PRESERVE: Keep the mug handle, background, and scene completely unchanged. Only modify the mug's printable surface.
+6. WHITE AREAS: Any white or light areas in the design blend seamlessly with the white mug ceramic - they are not separate backgrounds or rectangles.
 
-Result should look like a professional Etsy product photo with a full 360° wrap design.`;
+Think: "What would this mug look like if these design elements were sublimation-printed covering its entire surface?"`;
 
     console.log('Calling Gemini API with model:', model);
 
