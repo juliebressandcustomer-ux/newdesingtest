@@ -130,9 +130,8 @@ app.post('/api/generate-mockup', async (req, res) => {
       apiKey: process.env.GEMINI_API_KEY 
     });
 
-    // Updated to newer model for better results
-    
-    const model = 'gemini-1.5-flash';
+    // Use the latest available Gemini Flash model
+    const model = 'gemini-1.5-flash-latest';
 
     // OPTIMIZED PROMPT - Handles white background designs correctly
     const prompt = `You are a professional product mockup specialist. Apply the design elements from the second image onto the white mug in the first image.
@@ -307,7 +306,7 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📡 API: http://localhost:${PORT}/api/generate-mockup`);
   console.log(`📁 Uploads: ${uploadsDir}`);
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
-  console.log(`🤖 AI Model: gemini-2.0-flash-exp`);
+  console.log(`🤖 AI Model: gemini-1.5-flash-latest`);
   console.log(`🎯 Improved prompt for better quality`);
   console.log('='.repeat(50));
 });
