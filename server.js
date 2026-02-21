@@ -154,8 +154,8 @@ Think: "What would this mug look like if these design elements were sublimation-
 
     console.log('Calling Gemini API with model:', model);
 
-    // Call Gemini API
-    const response = await ai.models.generateContent({
+    // Call Gemini API with timeout
+    const apiCallPromise = ai.models.generateContent({
       model: model,
       contents: {
         parts: [
@@ -175,6 +175,13 @@ Think: "What would this mug look like if these design elements were sublimation-
         ],
       },
     });
+
+    // Set a timeout of 60 seconds
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('API call timed out after 60 seconds')), 60000);
+    });
+
+    const response = await Promise.race([apiCallPromise, timeoutPromise]);
 
     // Extract result
     if (!response.candidates || response.candidates.length === 0) {
@@ -214,6 +221,12 @@ Think: "What would this mug look like if these design elements were sublimation-
         fs.writeFileSync(filepath, compressedBuffer);
 
         console.log('Mockup generated and saved:', filename);
+
+        // Free up memory
+        if (global.gc) {
+          global.gc();
+          console.log('Memory cleanup performed');
+        }
 
         // Get base URL
         const baseUrl = process.env.RAILWAY_PUBLIC_DOMAIN 
@@ -293,6 +306,30 @@ const cleanupOldFiles = () => {
 };
 
 setInterval(cleanupOldFiles, 60 * 60 * 1000);
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit the process - just log the error
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  // Don't exit the process - just log the error
+});
+
+// Handle SIGTERM gracefully
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully...');
+  process.exit(0);
+});
+
+// Handle SIGINT gracefully (Ctrl+C)
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully...');
+  process.exit(0);
+});
 
 // Start server - CRITICAL: Bind to 0.0.0.0 for Railway
 app.listen(PORT, '0.0.0.0', () => {
