@@ -131,7 +131,8 @@ app.post('/api/generate-mockup', async (req, res) => {
     });
 
     // Updated to newer model for better results
-    const model = 'gemini-2.0-flash-exp';
+    
+    const model = 'gemini-1.5-flash';
 
     // OPTIMIZED PROMPT - Handles white background designs correctly
     const prompt = `You are a professional product mockup specialist. Apply the design elements from the second image onto the white mug in the first image.
