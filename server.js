@@ -30,11 +30,27 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Serve static files from uploads directory
 app.use('/uploads', express.static(uploadsDir));
 
+// Root endpoint - for Railway default health check
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok',
+    service: 'Mug Mockup API',
+    version: '3.1',
+    endpoints: {
+      health: '/health',
+      api: '/api/generate-mockup',
+      download: '/download/:filename'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     message: 'Mug Mockup API is running',
+    geminiApiKey: process.env.GEMINI_API_KEY ? 'configured' : 'missing',
     timestamp: new Date().toISOString()
   });
 });
@@ -79,50 +95,31 @@ app.post('/api/generate-mockup', async (req, res) => {
       apiKey: process.env.GEMINI_API_KEY 
     });
 
-    const model = 'gemini-2.5-flash-image';
+    // Updated to newer model for better results
+    const model = 'gemini-2.0-flash-exp';
 
-    // FULL COVERAGE prompt — design must wrap entire mug surface
-    const prompt = `You are a professional product mockup specialist. Your ONLY task is to wrap the provided design image fully around the mug in the photo.
+    // IMPROVED SIMPLIFIED PROMPT - More focused, less overwhelming
+    const prompt = `You are a professional product mockup specialist. Apply the design image to the mug as a realistic full-wrap sublimation print.
 
-PLACEMENT RULES — CRITICAL:
-1. The design must cover the ENTIRE visible surface of the mug from left edge to right edge
-2. The design must fill the mug vertically from just below the rim all the way down to just above the base
-3. Scale the design UP to completely fill the mug surface — do NOT leave any blank white/colored mug surface visible
-4. The design should wrap around the mug following its natural cylindrical curvature
-5. Think of it as a full-wrap sublimation print — the design covers 100% of the mug body
+CRITICAL REQUIREMENTS:
 
-WRAPPING & PERSPECTIVE RULES:
-- Apply realistic cylindrical perspective distortion so the design follows the mug's curve
-- The center portion of the design faces the camera and is most visible
-- The left and right edges of the design curve away naturally with the mug shape
-- Apply the original photo's lighting, highlights and shadows on top of the design
-- The design must look like it was sublimation-printed directly into the ceramic — not a sticker
+1. COVERAGE: The design must completely wrap around the visible mug surface from edge to edge, top to bottom. No blank mug surface should be visible.
 
-TRANSPARENCY RULES:
-- Transparent/empty areas in the design = mug ceramic surface shows through naturally
-- Do NOT add any background color, rectangle, or shape behind the design elements
-- Only the actual design artwork (text, illustrations, colors) appears on the mug surface
-- White mug stays white wherever the design is transparent
+2. PERSPECTIVE: Apply realistic cylindrical distortion so the design naturally follows the mug's curved shape. The center portion faces forward, edges curve away.
 
-FORBIDDEN — NEVER DO THESE:
-❌ Leaving large blank uncovered areas on the mug body
-❌ Placing the design only in the center as a small patch or sticker
-❌ Shrinking the design so it only covers part of the mug
-❌ Adding any background rectangle, square, or shape behind the design
-❌ Making the design look like a label with borders or white edges
-❌ Changing the mug shape, handle, color or background of the original photo
+3. REALISM: The design must look like it was printed directly into the ceramic using sublimation printing - NOT like a sticker or label pasted on.
 
-REQUIRED — ALWAYS DO THESE:
-✅ Design fills the FULL visible mug surface from edge to edge, top to bottom
-✅ Realistic full-wrap sublimation print appearance
-✅ Natural cylindrical perspective and curvature applied to the design
-✅ Original photo lighting and shadows preserved and applied over the design
-✅ Professional Etsy product photo quality result
-✅ The mug handle, background and overall scene remain unchanged`;
+4. LIGHTING: Preserve all original shadows, highlights, and lighting from the mug photo. Apply these effects OVER the design.
 
-    console.log('Calling Gemini API...');
+5. TRANSPARENCY: If the design has transparent areas, the white mug surface shows through naturally. Do not add any background rectangles or shapes.
 
-    // Call Gemini API — prompt FIRST for better instruction following
+6. PRESERVE: Keep the mug handle, background, and scene completely unchanged. Only modify the mug's printable surface.
+
+Result should look like a professional Etsy product photo with a full 360° wrap design.`;
+
+    console.log('Calling Gemini API with model:', model);
+
+    // Call Gemini API
     const response = await ai.models.generateContent({
       model: model,
       contents: {
@@ -200,6 +197,7 @@ REQUIRED — ALWAYS DO THESE:
           originalSize: originalBuffer.length,
           compressedSize: compressedBuffer.length,
           compressionRatio: `${((1 - compressedBuffer.length / originalBuffer.length) * 100).toFixed(1)}%`,
+          model: model,
           timestamp: new Date().toISOString()
         });
       }
@@ -261,17 +259,19 @@ const cleanupOldFiles = () => {
 
 setInterval(cleanupOldFiles, 60 * 60 * 1000);
 
-// Start server
+// Start server - CRITICAL: Bind to 0.0.0.0 for Railway
 app.listen(PORT, '0.0.0.0', () => {
   console.log('='.repeat(50));
-  console.log('🎨 Mug Mockup API Server v3.0');
+  console.log('🎨 Mug Mockup API Server v3.1');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🌐 Host: 0.0.0.0 (Railway compatible)`);
   console.log(`🏥 Health: http://localhost:${PORT}/health`);
+  console.log(`📍 Root: http://localhost:${PORT}/`);
   console.log(`📡 API: http://localhost:${PORT}/api/generate-mockup`);
   console.log(`📁 Uploads: ${uploadsDir}`);
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
-  console.log(`🎯 Full-Wrap Coverage: ENABLED`);
-  console.log(`📐 Prompt Order: TEXT FIRST (better instruction following)`);
+  console.log(`🤖 AI Model: gemini-2.0-flash-exp`);
+  console.log(`🎯 Improved prompt for better quality`);
   console.log('='.repeat(50));
 });
