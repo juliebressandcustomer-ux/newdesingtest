@@ -35,7 +35,7 @@ app.get('/', (req, res) => {
   res.json({ 
     status: 'ok',
     service: 'Mug Mockup API',
-    version: '3.1',
+    version: '4.0',
     endpoints: {
       health: '/health',
       api: '/api/generate-mockup',
@@ -98,24 +98,21 @@ app.post('/api/generate-mockup', async (req, res) => {
     // Use the official image generation model from Gemini
     const model = 'gemini-2.5-flash-image';
 
-    // OPTIMIZED PROMPT - Handles white background designs correctly
-    const prompt = `You are a professional product mockup specialist. Apply the design elements from the second image onto the white mug in the first image.
+    // COMPLETELY NEW APPROACH - Simple and direct instructions
+    const prompt = `Edit this mug photo by adding the design from the second image onto the mug surface.
 
-CRITICAL INSTRUCTIONS:
+Instructions:
+1. Take the design elements (text, graphics, patterns) from the second image
+2. Map them onto the cylindrical surface of the white mug in the first image
+3. Apply perspective distortion so the design wraps around the mug's curved shape
+4. The design should cover the full visible surface of the mug from edge to edge
+5. Maintain the original lighting, shadows and reflections on the mug
+6. The design should look like it was printed directly on the ceramic
+7. Keep everything else in the photo unchanged (hand, background, table, handle)
 
-1. EXTRACT ONLY THE DESIGN ELEMENTS: The second image shows the design on a white background. Only apply the actual design elements (text, graphics, colors, patterns) to the mug. The white background in the design image should be ignored - it represents the mug's natural white ceramic surface.
+Important: Where the second image has white background, that represents the white mug surface showing through - don't add any extra background shapes or rectangles.
 
-2. FULL WRAP COVERAGE: Scale and wrap the design elements to completely cover the visible mug surface from left edge to right edge, top to bottom. The design should fill the entire cylindrical surface.
-
-3. NATURAL PERSPECTIVE: Apply realistic cylindrical distortion so design elements curve naturally with the mug shape. Center elements face forward, edges curve away following the mug's form.
-
-4. SUBLIMATION PRINT QUALITY: The design must look printed directly into the ceramic, not like a sticker. Apply the original photo's lighting, shadows, and highlights over the design.
-
-5. PRESERVE ORIGINAL: Keep the mug handle, background, table, and entire scene unchanged. Only modify the mug's outer surface with the design.
-
-6. WHITE AREAS: Any white or light areas in the design blend seamlessly with the white mug ceramic - they are not separate backgrounds or rectangles.
-
-Think: "What would this mug look like if these design elements were sublimation-printed covering its entire surface?"`;
+Generate a realistic product photo showing the mug with this design applied.`;
 
     console.log('Calling Gemini API with model:', model);
 
@@ -297,7 +294,7 @@ process.on('SIGINT', () => {
 // Start server - CRITICAL: Bind to 0.0.0.0 for Railway
 app.listen(PORT, '0.0.0.0', () => {
   console.log('='.repeat(50));
-  console.log('🎨 Mug Mockup API Server v3.1');
+  console.log('🎨 Mug Mockup API Server v4.0');
   console.log('='.repeat(50));
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🌐 Host: 0.0.0.0 (Railway compatible)`);
@@ -307,6 +304,6 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`📁 Uploads: ${uploadsDir}`);
   console.log(`🔑 Gemini API Key: ${process.env.GEMINI_API_KEY ? '✅ Set' : '❌ Missing'}`);
   console.log(`🤖 AI Model: gemini-2.5-flash-image`);
-  console.log(`🎯 Improved prompt for better quality`);
+  console.log(`🎯 Simplified prompt - direct image editing`);
   console.log('='.repeat(50));
 });
